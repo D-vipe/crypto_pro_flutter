@@ -1,8 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:crypto_pro_flutter/models/certificate.dart';
-import 'package:crypto_pro_flutter/models/license.dart';
+import 'package:crypto_pro_flutter/models/plugin_models.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 

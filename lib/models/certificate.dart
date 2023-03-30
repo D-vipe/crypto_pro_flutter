@@ -1,20 +1,14 @@
+part of 'plugin_models.dart';
+
 class Certificate {
   late final String? alias;
-
   late final String? owner;
-
   late final String? issuer;
-
   late final String? serialNumber;
-
   late final String? algorithm;
-
   late final int? version;
-
   late final String? oid;
-
   late final String? validFrom;
-
   late final String? validTo;
 
   Certificate({

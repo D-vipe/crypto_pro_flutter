@@ -1,3 +1,5 @@
+part of 'plugin_models.dart';
+
 class License {
   final String serialNumber;
   final String maskedNumber;
