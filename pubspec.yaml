@@ -35,7 +35,7 @@ flutter:
   plugin:
     platforms:
       android:
-        package: com.a2soft.crypto_pro_flutter
+        package: ru.ruNetSoft.crypto_pro_flutter
         pluginClass: CryptoProFlutterPlugin
       ios:
         pluginClass: CryptoProFlutterPlugin

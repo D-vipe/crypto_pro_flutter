@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:crypto_pro_flutter/models/certificate.dart';
+import 'package:crypto_pro_flutter/models/license.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'crypto_pro_flutter_method_channel.dart';
@@ -31,6 +32,14 @@ abstract class CryptoProFlutterPlatform extends PlatformInterface {
     throw UnimplementedError('initCSP() has not been implemented.');
   }
 
+  Future<String> getLicenceStatus() {
+    throw UnimplementedError('getLicenceStatus() has not been implemented.');
+  }
+
+  Future<License> getLicenceData() {
+    throw UnimplementedError('getLicenceStatus() has not been implemented.');
+  }
+
   /// Добавить новый сертификат в формате Pfx
   Future<Certificate> addCertificate(File file, String password) {
     throw UnimplementedError('addCertificate() has not been implemented.');
@@ -44,6 +53,10 @@ abstract class CryptoProFlutterPlatform extends PlatformInterface {
   /// Получит список установленных сертификатов
   Future<List<Certificate>> getInstalledCertificates() {
     throw UnimplementedError('getInstalledCertificates() has not been implemented.');
+  }
+
+  Future<List<Certificate>> getASCPCertificates() {
+    throw UnimplementedError('getASCPCertificates() has not been implemented.');
   }
 
   /// Подписать файл

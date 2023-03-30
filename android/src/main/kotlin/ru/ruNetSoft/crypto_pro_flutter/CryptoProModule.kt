@@ -1,7 +1,10 @@
-package com.a2soft.crypto_pro_flutter
+package ru.ruNetSoft.crypto_pro_flutter
 
 import android.content.Context
-import com.a2soft.crypto_pro_flutter.exceptions.NoPrivateKeyFound
+import android.content.Intent
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat.startActivity
+import ru.ruNetSoft.crypto_pro_flutter.exceptions.NoPrivateKeyFound
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -13,16 +16,21 @@ import ru.CryptoPro.JCP.KeyStore.JCPPrivateKeyEntry
 import ru.CryptoPro.JCP.params.JCPProtectionParameter
 import ru.CryptoPro.JCP.tools.Encoder
 import ru.CryptoPro.JCSP.CSPConfig
+import ru.CryptoPro.JCSP.CSPProviderInterface
 import ru.CryptoPro.JCSP.JCSP
 import ru.CryptoPro.JCSP.support.BKSTrustStore
 import ru.CryptoPro.reprov.RevCheck
 import ru.CryptoPro.ssl.util.cpSSLConfig
+import ru.cprocsp.ACSP.tools.license.CSPLicenseConstants
+import ru.cprocsp.ACSP.tools.license.LicenseInterface
 import java.io.*
 import java.security.KeyStore
 import java.security.KeyStoreException
 import java.security.PrivateKey
 import java.security.Security
+import java.security.cert.Certificate
 import java.security.cert.X509Certificate
+
 
 /** Модуль для работы с Crypto Pro */
 class CryptoProModule {
@@ -79,9 +87,99 @@ class CryptoProModule {
             System.setProperty("com.ibm.security.enableCRLDP", "true")
             System.setProperty("ru.CryptoPro.reprov.enableAIAcaIssuers", "true")
             System.setProperty("com.sun.security.enableAIAcaIssuers", "true")
+            System.setProperty("ngate_set_jcsp_if_gost", "true");
         }
 
         return initOk
+    }
+
+    /** Получить данные лицензии */
+    fun getLicenceStatus(): String {
+        val providerInfo: CSPProviderInterface = CSPConfig.INSTANCE.cspProviderInfo
+        val license: LicenseInterface = providerInfo.license
+
+        val licenseStatus: Int = license.checkAndSave()
+        return returnLicenceStatus(license, licenseStatus)
+    }
+
+    fun getLicenceData(): JSONObject {
+        return try {
+            val providerInfo: CSPProviderInterface = CSPConfig.INSTANCE.cspProviderInfo
+            val license: LicenseInterface = providerInfo.license
+            val response = JSONObject()
+            response.put("serialNumber", license.serialNumber)
+            response.put("maskedNumber", license.maskedSerialNumber)
+            response.put("expiredThrough", license.expiredThroughDays.toString())
+            response.put("existingLicenseStatus", license.existingLicenseStatus)
+            response.put("licenseType", license.licenseType)
+            response
+        } catch (e: Exception) {
+            getErrorResponse("Произошла непредвиденная ошибка", e)
+        }
+
+    }
+
+    /** Вывод значений статуса лиценизии */
+    private fun returnLicenceStatus(license: LicenseInterface, licenseStatus: Int): String {
+        var result: String
+
+        val licenseType: Int = license.licenseType
+
+        result = if (licenseStatus == CSPLicenseConstants.LICENSE_STATUS_OK) {
+            "true | ok serial: ${license.serialNumber}"
+        } // if
+        else {
+            if (licenseType == CSPLicenseConstants.LICENSE_TYPE_EXPIRED) {
+                "false | expired serial: ${license.serialNumber}"
+            } // if
+            else {
+                "false | invalid serial: ${license.serialNumber}"
+            } // else
+        } // else
+
+
+        if (licenseStatus != CSPLicenseConstants.LICENSE_STATUS_INVALID) {
+            result = when (licenseType) {
+                CSPLicenseConstants.LICENSE_TYPE_EXPIRED -> {
+                    "false | expiredThroughDays: expired serial: ${license.serialNumber}"
+                } // if
+                CSPLicenseConstants.LICENSE_TYPE_PERMANENT -> {
+                    "true | expiredThroughDays: permanent serial: ${license.serialNumber}"
+                } // else if
+                else -> {
+                    "true | expiredThroughDays: ${license.expiredThroughDays} serial: ${license.serialNumber}"
+
+
+                }
+            } // else
+        } // if
+
+
+        result = if (licenseStatus != CSPLicenseConstants.LICENSE_STATUS_OK) {
+            "false | error"
+        } // if
+        else {
+            "true | installation date: ${license.licenseInstallDateAsString} serial: ${license.serialNumber}"
+
+        }
+
+        return result
+    }
+
+    fun getASCPCertificates() {
+        val hdStore = KeyStore.getInstance(JCSP.HD_STORE_NAME, JCSP.PROVIDER_NAME)
+        hdStore.load(null, null)
+        val hdPrivateKey = hdStore.getKey("alias", null) as PrivateKey
+        val hdCerts: Array<Certificate> = hdStore.getCertificateChain("alias")
+        val certificatesJSON = ArrayList<JSONObject>()
+
+        println(hdCerts.toString())
+
+        val response = JSONObject()
+//        response.put("success", true)
+//        response.put("certificate", getJSONCertificate(mainCertAlias, certificate))
+//        return response
+
     }
 
     /** Получить файл хранилища доверенных сертификатов */
@@ -256,6 +354,48 @@ class CryptoProModule {
         }
     }
 
+    /** Добавление .cer файла */
+    fun addCertificate(path: String, password: String, context: Context): JSONObject {
+        try {
+            // Загружаем cer-файл в Cer-KeyStore
+            val keyStore = KeyStore.getInstance(JCSP.CERT_STORE_NAME, JCSP.PROVIDER_NAME)
+            val fileInputStream: InputStream = FileInputStream(path)
+            keyStore.load(null,null)
+            keyStore.load(fileInputStream, password.toCharArray())
+            // Получаем алиас сертификата с приватным ключем
+            val mainCertAlias: String = findPrivateKeyAlias(keyStore)
+            val certificate = keyStore.getCertificate(mainCertAlias) as X509Certificate
+            val privateKey = keyStore.getKey(mainCertAlias, password.toCharArray()) as PrivateKey
+            val chain = keyStore.getCertificateChain(mainCertAlias)
+            // Загружаем цепочку в HDImage
+            val hdKeyStore = KeyStore.getInstance(JCSP.HD_STORE_NAME, JCSP.PROVIDER_NAME)
+            hdKeyStore.load(null, null)
+            if (!hdKeyStore.containsAlias(mainCertAlias)) {
+                val keyEntry = JCPPrivateKeyEntry(privateKey, chain, true)
+                val parameter = JCPProtectionParameter(null)
+                hdKeyStore.setEntry(mainCertAlias, keyEntry as KeyStore.Entry, parameter as KeyStore.PasswordProtection)
+            }
+
+            // Добавляем остальные сертификаты из pfx-файла в хранилище доверенных
+            for (alias in keyStore.aliases().toList()) {
+                if (alias != mainCertAlias && !containsAliasInBks(alias)) {
+                    addToBksTrustStore(alias, keyStore.getCertificate(alias) as X509Certificate)
+                }
+            }
+
+
+
+            val response = JSONObject()
+            response.put("success", true)
+            response.put("certificate", getJSONCertificate(mainCertAlias, certificate))
+            return response
+        } catch (e: NoPrivateKeyFound) {
+            return getErrorResponse("Не найден приватный ключ, связанный с сертификатом", e)
+        } catch (e: Exception) {
+            return getErrorResponse("Произошла непредвиденная ошибка", e)
+        }
+    }
+
     /** Удаление PFX-сертификата */
     fun deletePfxCertificate(alias: String): JSONObject {
         try {
@@ -278,7 +418,7 @@ class CryptoProModule {
         try {
             val keyStore = KeyStore.getInstance(JCSP.HD_STORE_NAME, JCSP.PROVIDER_NAME)
             keyStore.load(null, null)
-            val aliases = keyStore.aliases().toList().filterNot { it.contains("root_csp") }
+            val aliases = keyStore.aliases().toList()
             val certificatesJSON = ArrayList<JSONObject>()
 
             for (alias in aliases) {

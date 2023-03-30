@@ -1,4 +1,4 @@
-group 'com.a2soft.crypto_pro_flutter'
+group 'ru.ruNetSoft.crypto_pro_flutter'
 version '1.0-SNAPSHOT'
 
 buildscript {

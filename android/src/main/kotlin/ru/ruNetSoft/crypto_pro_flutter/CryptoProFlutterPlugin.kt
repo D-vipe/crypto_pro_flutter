@@ -1,4 +1,4 @@
-package com.a2soft.crypto_pro_flutter
+package ru.ruNetSoft.crypto_pro_flutter
 
 import android.content.Context
 import androidx.annotation.NonNull
@@ -31,6 +31,18 @@ class CryptoProFlutterPlugin: FlutterPlugin, MethodCallHandler {
           "initCSP" -> {
             result.success(CryptoProModule.getInstance().initCSP(context!!))
           }
+          "getLicenceStatus" -> {
+            result.success(CryptoProModule.getInstance().getLicenceStatus())
+          }
+
+          "getLicenceData" -> {
+            result.success(CryptoProModule.getInstance().getLicenceData().toString())
+          }
+
+          "getASCPCertificates" -> {
+            result.success(CryptoProModule.getInstance().getASCPCertificates().toString())
+          }
+
           "addPfxCertificate" -> {
             val path = call.argument<String>("path")
             val password = call.argument<String>("password")

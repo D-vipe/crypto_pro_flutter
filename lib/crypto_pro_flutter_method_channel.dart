@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto_pro_flutter/models/certificate.dart';
+import 'package:crypto_pro_flutter/models/license.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -16,6 +17,26 @@ class MethodChannelCryptoProFlutter extends CryptoProFlutterPlatform {
   Future<bool> initCSP() async {
     final result = await methodChannel.invokeMethod<bool>('initCSP');
     return result ?? false;
+  }
+
+  @override
+  Future<String> getLicenceStatus() async {
+    final result = await methodChannel.invokeMethod<String>('getLicenceStatus');
+    return result ?? 'error occured';
+  }
+
+  @override
+  Future<License> getLicenceData() async {
+    try {
+      final String response = await methodChannel.invokeMethod('getLicenceData');
+
+      final Map<String, dynamic> jsonData = json.decode(response) as Map<String, dynamic>;
+      final license = License.fromJson(jsonData);
+
+      return license;
+    } catch (exception) {
+      throw Exception();
+    }
   }
 
   @override
@@ -54,6 +75,18 @@ class MethodChannelCryptoProFlutter extends CryptoProFlutterPlatform {
   Future<List<Certificate>> getInstalledCertificates() async {
     try {
       String response = await methodChannel.invokeMethod("getInstalledCertificates");
+      Map<String, dynamic> map = json.decode(response);
+      final certificatesMaps = List<Map<String, dynamic>>.from(map['certificates'] as List);
+      return certificatesMaps.map((e) => Certificate.fromMap(e)).toList();
+    } catch (exception) {
+      throw Exception();
+    }
+  }
+
+  @override
+  Future<List<Certificate>> getASCPCertificates() async {
+    try {
+      String response = await methodChannel.invokeMethod("getASCPCertificates");
       Map<String, dynamic> map = json.decode(response);
       final certificatesMaps = List<Map<String, dynamic>>.from(map['certificates'] as List);
       return certificatesMaps.map((e) => Certificate.fromMap(e)).toList();

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:crypto_pro_flutter/models/certificate.dart';
+import 'package:crypto_pro_flutter/models/license.dart';
 
 import 'crypto_pro_flutter_platform_interface.dart';
 
@@ -8,6 +9,19 @@ class CryptoProFlutter {
   /// Инициализация провайдера
   Future<bool> initCSP() {
     return CryptoProFlutterPlatform.instance.initCSP();
+  }
+
+  /// Проверка статуса лицензии
+  Future<String> getLicenceStatus() {
+    return CryptoProFlutterPlatform.instance.getLicenceStatus();
+  }
+
+  Future<License> getLicenceData() {
+    return CryptoProFlutterPlatform.instance.getLicenceData();
+  }
+
+  Future<List<Certificate>> getASCPCertificates() async {
+    return await CryptoProFlutterPlatform.instance.getASCPCertificates();
   }
 
   /// Добавить новый сертификат в формате Pfx

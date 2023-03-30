@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.a2soft.crypto_pro_flutter_example">
+    package="ru.ruNetSoft.crypto_pro_flutter_example">
    <uses-permission android:name="android.permission.INTERNET" />
    <application
         android:label="crypto_pro_flutter_example"
