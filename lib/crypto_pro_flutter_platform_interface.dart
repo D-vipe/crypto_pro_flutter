@@ -54,14 +54,18 @@ abstract class CryptoProFlutterPlatform extends PlatformInterface {
     throw UnimplementedError('getInstalledCertificates() has not been implemented.');
   }
 
-  Future<List<Certificate>> getASCPCertificates() {
-    throw UnimplementedError('getASCPCertificates() has not been implemented.');
+  Future<bool> copyContainerFromDir({required List<String> files, required String dirName}) {
+    throw UnimplementedError('copyContainerFromDir() has not been implemented.');
+  }
+
+  Future<License?> setNewLicense(String number) {
+    throw UnimplementedError('serNewLicense() has not been implemented.');
   }
 
   /// Подписать файл
   Future<String> signFile({
     required File file,
-    required Certificate certificate,
+    required String certificateAlias,
     required String password,
     bool isDetached = true,
     bool disableOnlineValidation = false,

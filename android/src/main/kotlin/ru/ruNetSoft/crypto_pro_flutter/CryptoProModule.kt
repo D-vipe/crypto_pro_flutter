@@ -1,10 +1,9 @@
 package ru.ruNetSoft.crypto_pro_flutter
 
 import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageManager
-import androidx.core.content.ContextCompat.startActivity
-import ru.ruNetSoft.crypto_pro_flutter.exceptions.NoPrivateKeyFound
+import android.content.pm.ApplicationInfo
+import android.util.Log
+import androidx.documentfile.provider.DocumentFile
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -21,19 +20,23 @@ import ru.CryptoPro.JCSP.JCSP
 import ru.CryptoPro.JCSP.support.BKSTrustStore
 import ru.CryptoPro.reprov.RevCheck
 import ru.CryptoPro.ssl.util.cpSSLConfig
+import ru.cprocsp.ACSP.tools.common.AppUtils
+import ru.cprocsp.ACSP.tools.common.CSPTool
+import ru.cprocsp.ACSP.tools.common.RawResource
 import ru.cprocsp.ACSP.tools.license.CSPLicenseConstants
 import ru.cprocsp.ACSP.tools.license.LicenseInterface
+import ru.ruNetSoft.crypto_pro_flutter.exceptions.NoPrivateKeyFound
 import java.io.*
 import java.security.KeyStore
 import java.security.KeyStoreException
 import java.security.PrivateKey
 import java.security.Security
-import java.security.cert.Certificate
 import java.security.cert.X509Certificate
-
+import java.util.*
 
 /** Модуль для работы с Crypto Pro */
 class CryptoProModule {
+    var cAdESCAInstalled: Boolean = false;
     companion object Factory {
         private var instance: CryptoProModule? = null
 
@@ -106,17 +109,116 @@ class CryptoProModule {
         return try {
             val providerInfo: CSPProviderInterface = CSPConfig.INSTANCE.cspProviderInfo
             val license: LicenseInterface = providerInfo.license
+            val licenseStatus: Int = license.checkAndSave()
+
             val response = JSONObject()
+
             response.put("serialNumber", license.serialNumber)
             response.put("maskedNumber", license.maskedSerialNumber)
             response.put("expiredThrough", license.expiredThroughDays.toString())
             response.put("existingLicenseStatus", license.existingLicenseStatus)
             response.put("licenseType", license.licenseType)
+            response.put("status", returnLicenceStatus(license, licenseStatus))
             response
         } catch (e: Exception) {
-            getErrorResponse("Произошла непредвиденная ошибка", e)
+            getErrorResponse("Произошла непредвиденная ошибка при получении данных лицензии", e)
         }
 
+    }
+
+    fun setNewLicense(licenseNumber: String): JSONObject {
+        return  try {
+            val response = JSONObject()
+            val providerInfo: CSPProviderInterface = CSPConfig.INSTANCE.cspProviderInfo
+
+//            CSPConfig.INSTANCE.cspProviderInfo.config.setReaderName()
+
+            var license: LicenseInterface = providerInfo.license
+
+            val licenseStatus: Int = license.checkAndSave(licenseNumber, false)
+            val saved: Boolean = licenseStatus == CSPLicenseConstants.LICENSE_STATUS_OK;
+
+            if (saved) {
+                license = providerInfo.license
+            }
+
+            response.put("serialNumber", license.serialNumber)
+            response.put("maskedNumber", license.maskedSerialNumber)
+            response.put("expiredThrough", if (license.licenseType == CSPLicenseConstants.LICENSE_TYPE_PERMANENT) "-1" else license.expiredThroughDays.toString())
+            response.put("existingLicenseStatus", license.existingLicenseStatus)
+            response.put("licenseType", license.licenseType)
+            response.put("status", returnLicenceStatus(license, licenseStatus))
+            response.put("success", saved)
+
+            response
+        } catch (e: Exception) {
+            getErrorResponse("Произошла непредвиденная ошибка при установке новой лицензии", e)
+        }
+    }
+
+    /** Копирование контейнера из папки пользователя */
+    fun copyContainerFromDir(context: Context, cFiles: ArrayList<String>, dirName: String): Boolean {
+        val cspTool = CSPTool(context)
+
+        return try {
+            val dstPath = StringBuilder()
+            dstPath.append(cspTool.appInfrastructure.keysDirectory).append(File.separator)
+                .append(userName2Dir(context))
+
+            val dstContainer = File(dstPath.toString(), dirName)
+            if (!dstContainer.exists() && !dstContainer.mkdirs()) {
+                println("ACSP: Couldn't create store directory = ${dstContainer.absolutePath}")
+                false
+            } else {
+                var containerFiles: ArrayList<DocumentFile> = ArrayList()
+                for (path in cFiles) {
+                    containerFiles.add(DocumentFile.fromFile(File(path)))
+                }
+
+                var copied = 0
+                var count = containerFiles.size
+                val containerSize = containerFiles.size
+                for (i in 0 until containerSize) {
+                    val srcCurrentContainerFile = containerFiles[i]
+                    val fileName = srcCurrentContainerFile.name
+                    if (fileName != null && fileName != "." && fileName != "..") {
+                        if (fileName.lastIndexOf(".key") < 0) {
+                            --count
+                        } else {
+                            println("ACSP: Copy file: $fileName")
+                            try {
+                                val `in`: InputStream? =
+                                    context.contentResolver.openInputStream(srcCurrentContainerFile.uri)
+                                if (!RawResource.writeStreamToFile(
+                                        `in`,
+                                        dstContainer.path,
+                                        fileName
+                                    )
+                                ) {
+                                    println("ACSP: file copied to: ${dstContainer.path}")
+                                    println("ACSP: Couldn't copy file: $fileName")
+                                } else {
+                                    println("ACSP: File $fileName was copied successfully.")
+                                    ++copied
+                                }
+                            } catch (exc: FileNotFoundException) {
+                                println("ACSP Exception: exc.message")
+                            }
+                        }
+                    }
+                }
+                count > 0 && copied == count
+            }
+        } catch (e: Exception) {
+            println("ERROR OCCURRED IN copyContainerFromDir, ${e.message}")
+            getErrorResponse("Произошла непредвиденная ошибка при копировании ключевого контейнера", e)
+            false
+        }
+    }
+
+    private fun userName2Dir(appCtx: Context): String? {
+        val appInfo: ApplicationInfo = appCtx.applicationInfo
+        return appInfo.uid.toString() + "." + appInfo.uid
     }
 
     /** Вывод значений статуса лиценизии */
@@ -126,14 +228,14 @@ class CryptoProModule {
         val licenseType: Int = license.licenseType
 
         result = if (licenseStatus == CSPLicenseConstants.LICENSE_STATUS_OK) {
-            "true | ok serial: ${license.serialNumber}"
+            "активна"
         } // if
         else {
             if (licenseType == CSPLicenseConstants.LICENSE_TYPE_EXPIRED) {
-                "false | expired serial: ${license.serialNumber}"
+                "истекла"
             } // if
             else {
-                "false | invalid serial: ${license.serialNumber}"
+                "номер лицензии неверен"
             } // else
         } // else
 
@@ -141,45 +243,18 @@ class CryptoProModule {
         if (licenseStatus != CSPLicenseConstants.LICENSE_STATUS_INVALID) {
             result = when (licenseType) {
                 CSPLicenseConstants.LICENSE_TYPE_EXPIRED -> {
-                    "false | expiredThroughDays: expired serial: ${license.serialNumber}"
+                    "истекла"
                 } // if
                 CSPLicenseConstants.LICENSE_TYPE_PERMANENT -> {
-                    "true | expiredThroughDays: permanent serial: ${license.serialNumber}"
+                    "перманентная"
                 } // else if
                 else -> {
-                    "true | expiredThroughDays: ${license.expiredThroughDays} serial: ${license.serialNumber}"
-
-
+                    "активна"
                 }
             } // else
         } // if
 
-
-        result = if (licenseStatus != CSPLicenseConstants.LICENSE_STATUS_OK) {
-            "false | error"
-        } // if
-        else {
-            "true | installation date: ${license.licenseInstallDateAsString} serial: ${license.serialNumber}"
-
-        }
-
         return result
-    }
-
-    fun getASCPCertificates() {
-        val hdStore = KeyStore.getInstance(JCSP.HD_STORE_NAME, JCSP.PROVIDER_NAME)
-        hdStore.load(null, null)
-        val hdPrivateKey = hdStore.getKey("alias", null) as PrivateKey
-        val hdCerts: Array<Certificate> = hdStore.getCertificateChain("alias")
-        val certificatesJSON = ArrayList<JSONObject>()
-
-        println(hdCerts.toString())
-
-        val response = JSONObject()
-//        response.put("success", true)
-//        response.put("certificate", getJSONCertificate(mainCertAlias, certificate))
-//        return response
-
     }
 
     /** Получить файл хранилища доверенных сертификатов */
@@ -230,18 +305,18 @@ class CryptoProModule {
 
     /** Подписать файл */
     fun signFile(filePathToSign: String, alias: String, password: String, detached: Boolean, disableOnlineValidation: Boolean) : JSONObject {
-        try {
+        return try {
             val fileInputStream = FileInputStream(filePathToSign)
             val size = fileInputStream.available()
             val buffer = ByteArray(size)
             fileInputStream.read(buffer)
             fileInputStream.close()
 
-            return sign(buffer, alias, password, detached, false, disableOnlineValidation)
+            sign(buffer, alias, password, detached, false, disableOnlineValidation)
         } catch (e: NoPrivateKeyFound) {
-            return getErrorResponse("Не найден приватный ключ, связанный с сертификатом", e)
+            getErrorResponse("Не найден приватный ключ, связанный с сертификатом", e)
         } catch (e: Exception) {
-            return getErrorResponse("Произошла непредвиденная ошибка", e)
+            getErrorResponse("Произошла непредвиденная ошибка", e)
         }
     }
 
@@ -261,15 +336,22 @@ class CryptoProModule {
 
             // Формируем цепочку для подписи
             val chain: MutableList<X509Certificate> = ArrayList()
+
+            println("CERTIFICATE CN: ${certificate.serialNumber}")
+
             chain.add(certificate)
 
             val cAdESSignature = CAdESSignature(detached, signHash)
+
+            println("CADESSIGNATURE: ${cAdESSignature.toString()}")
+
             if (disableOnlineValidation) {
                 cAdESSignature.setOptions((Options()).disableCertificateValidation());
             }
 
             var exception: Exception? = null;
 
+            println("BEFORE GFG THREAD INIT")
 
             val gfgThread = Thread {
                 try {
@@ -279,9 +361,12 @@ class CryptoProModule {
                         true
                     )
                 } catch (e: Exception) {
+                    println("EXCEPTION IN THREAD: ${e}")
                     exception = e
                 }
             }
+
+            println("BEFORE GFGTHREAD start")
 
             gfgThread.start()
             gfgThread.join();
@@ -291,6 +376,8 @@ class CryptoProModule {
             }
 
             val signatureStream = ByteArrayOutputStream()
+
+            println("SIGNATURE STREAM INITIATED ")
 
             cAdESSignature.open(signatureStream)
             cAdESSignature.update(contentToSign)
@@ -354,47 +441,6 @@ class CryptoProModule {
         }
     }
 
-    /** Добавление .cer файла */
-    fun addCertificate(path: String, password: String, context: Context): JSONObject {
-        try {
-            // Загружаем cer-файл в Cer-KeyStore
-            val keyStore = KeyStore.getInstance(JCSP.CERT_STORE_NAME, JCSP.PROVIDER_NAME)
-            val fileInputStream: InputStream = FileInputStream(path)
-            keyStore.load(null,null)
-            keyStore.load(fileInputStream, password.toCharArray())
-            // Получаем алиас сертификата с приватным ключем
-            val mainCertAlias: String = findPrivateKeyAlias(keyStore)
-            val certificate = keyStore.getCertificate(mainCertAlias) as X509Certificate
-            val privateKey = keyStore.getKey(mainCertAlias, password.toCharArray()) as PrivateKey
-            val chain = keyStore.getCertificateChain(mainCertAlias)
-            // Загружаем цепочку в HDImage
-            val hdKeyStore = KeyStore.getInstance(JCSP.HD_STORE_NAME, JCSP.PROVIDER_NAME)
-            hdKeyStore.load(null, null)
-            if (!hdKeyStore.containsAlias(mainCertAlias)) {
-                val keyEntry = JCPPrivateKeyEntry(privateKey, chain, true)
-                val parameter = JCPProtectionParameter(null)
-                hdKeyStore.setEntry(mainCertAlias, keyEntry as KeyStore.Entry, parameter as KeyStore.PasswordProtection)
-            }
-
-            // Добавляем остальные сертификаты из pfx-файла в хранилище доверенных
-            for (alias in keyStore.aliases().toList()) {
-                if (alias != mainCertAlias && !containsAliasInBks(alias)) {
-                    addToBksTrustStore(alias, keyStore.getCertificate(alias) as X509Certificate)
-                }
-            }
-
-
-
-            val response = JSONObject()
-            response.put("success", true)
-            response.put("certificate", getJSONCertificate(mainCertAlias, certificate))
-            return response
-        } catch (e: NoPrivateKeyFound) {
-            return getErrorResponse("Не найден приватный ключ, связанный с сертификатом", e)
-        } catch (e: Exception) {
-            return getErrorResponse("Произошла непредвиденная ошибка", e)
-        }
-    }
 
     /** Удаление PFX-сертификата */
     fun deletePfxCertificate(alias: String): JSONObject {
@@ -452,6 +498,36 @@ class CryptoProModule {
 
         return certificateJSON;
     }
+
+//    private fun checkCAdESCACertsAndInstall() {
+//
+//        // Установка корневых сертификатов для CAdES примеров.
+//        if (!cAdESCAInstalled) {
+//            val adapter = ContainerAdapter(getActivity(), null, false)
+//            adapter.setProviderType(ProviderType.currentProviderType())
+//            adapter.setResources(getResources())
+//            try {
+//                val installRootCert: CAdESData = InstallCAdESTestTrustCertExample(adapter)
+//
+//                // Если сертификаты не установлены, сообщаем об
+//                // этом и устанавливаем их.
+//                if (!installRootCert.isAlreadyInstalled()) {
+//
+//                    // Предупреждение о выполнении установки.
+//                    AppUtils.errorMessage(getActivity(), message, false, false)
+//                    Logger.clear()
+//                    Logger.log("*** Forced installation of CA certificates (CAdES) ***")
+//
+//                    // Установка.
+//                    installRootCert.getResult()
+//                } // if
+//                cAdESCAInstalled = true
+//            } catch (e: Exception) {
+//                Logger.setStatusFailed()
+//                Log.e(Constants.APP_LOGGER_TAG, e.message, e)
+//            }
+//        }
+//    }
 
     /** Поиск алиаса для сертификата с приватным ключем */
     @Throws(KeyStoreException::class, NoPrivateKeyFound::class)

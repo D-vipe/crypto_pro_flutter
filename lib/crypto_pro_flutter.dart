@@ -1,6 +1,5 @@
 import 'dart:io';
 
-
 import 'package:crypto_pro_flutter/models/plugin_models.dart';
 
 import 'crypto_pro_flutter_platform_interface.dart';
@@ -20,13 +19,21 @@ class CryptoProFlutter {
     return CryptoProFlutterPlatform.instance.getLicenceData();
   }
 
-  Future<List<Certificate>> getASCPCertificates() async {
-    return await CryptoProFlutterPlatform.instance.getASCPCertificates();
+  Future<License?> setNewLicense(String number) {
+    return CryptoProFlutterPlatform.instance.setNewLicense(number);
+  }
+
+  Future<bool> copyContainerFromDir({required List<String> files, required String dirName}) async {
+    return await CryptoProFlutterPlatform.instance.copyContainerFromDir(files: files, dirName: dirName);
   }
 
   /// Добавить новый сертификат в формате Pfx
   Future<Certificate> addPfxCertificate(File file, String password) async {
-    return await CryptoProFlutterPlatform.instance.addCertificate(file, password);
+    try {
+      return await CryptoProFlutterPlatform.instance.addCertificate(file, password);
+    } catch (e) {
+      rethrow;
+    }
   }
 
   /// Удалить установленный сертификат
@@ -43,14 +50,14 @@ class CryptoProFlutter {
   /// Подписать файл
   Future<String> signFile({
     required File file,
-    required Certificate certificate,
+    required String certificateAlias,
     required String password,
     bool isDetached = true,
     bool disableOnlineValidation = false,
   }) async {
     return await CryptoProFlutterPlatform.instance.signFile(
       file: file,
-      certificate: certificate,
+      certificateAlias: certificateAlias,
       password: password,
       isDetached: true,
       disableOnlineValidation: disableOnlineValidation,

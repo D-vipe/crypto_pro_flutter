@@ -39,8 +39,23 @@ class CryptoProFlutterPlugin: FlutterPlugin, MethodCallHandler {
             result.success(CryptoProModule.getInstance().getLicenceData().toString())
           }
 
-          "getASCPCertificates" -> {
-            result.success(CryptoProModule.getInstance().getASCPCertificates().toString())
+          "copyContainerFromDir" -> {
+            val files = call.argument<ArrayList<String>>("files")
+            val dirName = call.argument<String>("dirName")
+            if (files != null && dirName != null) {
+              result.success(CryptoProModule.getInstance().copyContainerFromDir(context!!, files, dirName).toString())
+            } else {
+              throw NullPointerException()
+            }
+          }
+
+          "setNewLicense" -> {
+            val licenseNumber = call.argument<String>("licenseNumber")
+            if (licenseNumber != null) {
+              result.success(CryptoProModule.getInstance().setNewLicense(licenseNumber).toString())
+            } else {
+              throw NullPointerException()
+            }
           }
 
           "addPfxCertificate" -> {

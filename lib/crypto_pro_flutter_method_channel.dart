@@ -39,6 +39,27 @@ class MethodChannelCryptoProFlutter extends CryptoProFlutterPlatform {
   }
 
   @override
+  Future<License?> setNewLicense(String number) async {
+    try {
+      String response = await methodChannel.invokeMethod(
+        "setNewLicense",
+        {
+          "licenseNumber": number,
+        },
+      );
+
+      final Map<String, dynamic> jsonData = json.decode(response) as Map<String, dynamic>;
+      if (jsonData['success'] != null && jsonData['success']) {
+        return License.fromJson(jsonData);
+      } else {
+        throw Exception('Не удалось установить лицензию. Статус серийного номера: ${jsonData['status']}');
+      }
+    } catch (exception) {
+      rethrow;
+    }
+  }
+
+  @override
   Future<Certificate> addCertificate(File file, String password) async {
     try {
       String response = await methodChannel.invokeMethod(
@@ -83,12 +104,11 @@ class MethodChannelCryptoProFlutter extends CryptoProFlutterPlatform {
   }
 
   @override
-  Future<List<Certificate>> getASCPCertificates() async {
+  Future<bool> copyContainerFromDir({required List<String> files, required String dirName}) async {
     try {
-      String response = await methodChannel.invokeMethod("getASCPCertificates");
-      Map<String, dynamic> map = json.decode(response);
-      final certificatesMaps = List<Map<String, dynamic>>.from(map['certificates'] as List);
-      return certificatesMaps.map((e) => Certificate.fromMap(e)).toList();
+      String response = await methodChannel.invokeMethod("copyContainerFromDir", {"files": files, "dirName": dirName});
+      print('PLATFORM CHANNEL RESULT OF COPY CONTAINER: ${response}');
+      return response == 'true';
     } catch (exception) {
       throw Exception();
     }
@@ -97,7 +117,7 @@ class MethodChannelCryptoProFlutter extends CryptoProFlutterPlatform {
   @override
   Future<String> signFile({
     required File file,
-    required Certificate certificate,
+    required String certificateAlias,
     required String password,
     bool isDetached = true,
     bool disableOnlineValidation = false,
@@ -106,7 +126,7 @@ class MethodChannelCryptoProFlutter extends CryptoProFlutterPlatform {
       "signFile",
       {
         "path": file.path,
-        "alias": certificate.alias,
+        "alias": certificateAlias,
         "password": password,
         "isDetached": isDetached,
         "disableOnlineValidation": disableOnlineValidation,
