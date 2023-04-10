@@ -2,7 +2,7 @@ package ru.ruNetSoft.crypto_pro_flutter
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
-import android.util.Log
+import android.content.res.AssetManager
 import androidx.documentfile.provider.DocumentFile
 import org.json.JSONArray
 import org.json.JSONException
@@ -20,8 +20,8 @@ import ru.CryptoPro.JCSP.JCSP
 import ru.CryptoPro.JCSP.support.BKSTrustStore
 import ru.CryptoPro.reprov.RevCheck
 import ru.CryptoPro.ssl.util.cpSSLConfig
-import ru.cprocsp.ACSP.tools.common.AppUtils
 import ru.cprocsp.ACSP.tools.common.CSPTool
+import ru.cprocsp.ACSP.tools.common.HexString
 import ru.cprocsp.ACSP.tools.common.RawResource
 import ru.cprocsp.ACSP.tools.license.CSPLicenseConstants
 import ru.cprocsp.ACSP.tools.license.LicenseInterface
@@ -31,14 +31,16 @@ import java.security.KeyStore
 import java.security.KeyStoreException
 import java.security.PrivateKey
 import java.security.Security
+import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.util.*
 
 /** Модуль для работы с Crypto Pro */
 class CryptoProModule {
-    var cAdESCAInstalled: Boolean = false;
     companion object Factory {
         private var instance: CryptoProModule? = null
+        private var trustCerts: ArrayList<X509Certificate> = ArrayList()
+        private const val ROOT_CERTS_DIRECTORY = "root_certs"
 
         fun getInstance(): CryptoProModule {
             if (instance == null) instance = CryptoProModule()
@@ -72,6 +74,7 @@ class CryptoProModule {
             AdESConfig.setDefaultProvider(JCSP.PROVIDER_NAME)
             // https://cryptopro.ru/forum2/default.aspx?g=posts&t=20779
             cpSSLConfig.setDefaultSSLProvider(JCSP.PROVIDER_NAME)
+
 
             // Включаем возможность онлайновой проверки статуса
             // сертификата.
@@ -167,7 +170,6 @@ class CryptoProModule {
 
             val dstContainer = File(dstPath.toString(), dirName)
             if (!dstContainer.exists() && !dstContainer.mkdirs()) {
-                println("ACSP: Couldn't create store directory = ${dstContainer.absolutePath}")
                 false
             } else {
                 var containerFiles: ArrayList<DocumentFile> = ArrayList()
@@ -185,7 +187,6 @@ class CryptoProModule {
                         if (fileName.lastIndexOf(".key") < 0) {
                             --count
                         } else {
-                            println("ACSP: Copy file: $fileName")
                             try {
                                 val `in`: InputStream? =
                                     context.contentResolver.openInputStream(srcCurrentContainerFile.uri)
@@ -337,21 +338,15 @@ class CryptoProModule {
             // Формируем цепочку для подписи
             val chain: MutableList<X509Certificate> = ArrayList()
 
-            println("CERTIFICATE CN: ${certificate.serialNumber}")
-
             chain.add(certificate)
 
             val cAdESSignature = CAdESSignature(detached, signHash)
-
-            println("CADESSIGNATURE: ${cAdESSignature.toString()}")
 
             if (disableOnlineValidation) {
                 cAdESSignature.setOptions((Options()).disableCertificateValidation());
             }
 
             var exception: Exception? = null;
-
-            println("BEFORE GFG THREAD INIT")
 
             val gfgThread = Thread {
                 try {
@@ -366,8 +361,6 @@ class CryptoProModule {
                 }
             }
 
-            println("BEFORE GFGTHREAD start")
-
             gfgThread.start()
             gfgThread.join();
 
@@ -376,8 +369,6 @@ class CryptoProModule {
             }
 
             val signatureStream = ByteArrayOutputStream()
-
-            println("SIGNATURE STREAM INITIATED ")
 
             cAdESSignature.open(signatureStream)
             cAdESSignature.update(contentToSign)
@@ -499,35 +490,127 @@ class CryptoProModule {
         return certificateJSON;
     }
 
-//    private fun checkCAdESCACertsAndInstall() {
-//
-//        // Установка корневых сертификатов для CAdES примеров.
-//        if (!cAdESCAInstalled) {
-//            val adapter = ContainerAdapter(getActivity(), null, false)
-//            adapter.setProviderType(ProviderType.currentProviderType())
-//            adapter.setResources(getResources())
-//            try {
-//                val installRootCert: CAdESData = InstallCAdESTestTrustCertExample(adapter)
-//
-//                // Если сертификаты не установлены, сообщаем об
-//                // этом и устанавливаем их.
-//                if (!installRootCert.isAlreadyInstalled()) {
-//
-//                    // Предупреждение о выполнении установки.
-//                    AppUtils.errorMessage(getActivity(), message, false, false)
-//                    Logger.clear()
-//                    Logger.log("*** Forced installation of CA certificates (CAdES) ***")
-//
-//                    // Установка.
-//                    installRootCert.getResult()
-//                } // if
-//                cAdESCAInstalled = true
-//            } catch (e: Exception) {
-//                Logger.setStatusFailed()
-//                Log.e(Constants.APP_LOGGER_TAG, e.message, e)
-//            }
-//        }
-//    }
+    fun checkCAdESCACertsAndInstall(
+        context: Context
+        /**cerPaths: ArrayList<String>*/
+    ) {
+        var trustStore = CSPConfig.getBksTrustStore() + File.separator +
+                BKSTrustStore.STORAGE_FILE_TRUST
+
+        // Пробуем взаимодействовать с assets
+        val assetManager: AssetManager = context.assets
+        val files =
+            assetManager.list(ROOT_CERTS_DIRECTORY)
+
+        if (files != null) {
+        }
+
+        if (files != null && !isAlreadyInstalled(trustStore)) {
+            for (file in files) {
+                val cert =
+                    assetManager.open(ROOT_CERTS_DIRECTORY + File.separator + file)
+
+                loadCert(cert, trustStore)
+            }
+        }
+
+    }
+
+    @Throws(Exception::class)
+    fun isAlreadyInstalled(trustStore: String): Boolean {
+        val storeStream = FileInputStream(trustStore)
+        val keyStore = KeyStore.getInstance(BKSTrustStore.STORAGE_TYPE)
+        keyStore.load(
+            storeStream,
+            BKSTrustStore.STORAGE_PASSWORD
+        )
+        storeStream.close()
+
+        // Если нет какого-то из сертификатов, то считается, что
+        // они не установлены.
+        if (trustCerts.isNotEmpty()) {
+            for (crt in trustCerts) {
+                if (keyStore.getCertificateAlias(crt) == null) {
+                    return false
+                } // if
+            } // for
+            return true
+        } else {
+            return false
+        }
+    }
+
+    @Throws(Exception::class)
+    private fun loadCert(trustStream: InputStream?, trustStore: String) {
+        try {
+            val factory = CertificateFactory.getInstance("X.509")
+            trustCerts.add(factory.generateCertificate(trustStream) as X509Certificate)
+        } finally {
+            if (trustStream != null) {
+                try {
+                    trustStream.close()
+                } catch (e: IOException) {
+                }
+            } // if
+
+            if (trustCerts.isNotEmpty()) {
+                for ((i, trustCert) in trustCerts.withIndex()) {
+                    saveTrustCert(trustStore, getBksTrustStore(), trustCert)
+                }
+            }
+        }
+    }
+
+    @Throws(Exception::class)
+    private fun saveTrustCert(
+        trustStore: String,
+        trustStoreFile: File,
+        trustCert: X509Certificate,
+    ) {
+        val storeStream = FileInputStream(trustStore)
+        val keyStore = KeyStore.getInstance(BKSTrustStore.STORAGE_TYPE)
+        keyStore.load(
+            storeStream,
+            BKSTrustStore.STORAGE_PASSWORD
+        )
+        storeStream.close()
+
+        println(
+            "Certificate sn: " +
+                    HexString.toHex(trustCert.serialNumber.toByteArray(), true) +
+                    ", subject: " + trustCert.subjectDN
+        )
+
+        // Будущий алиас корневого сертификата в хранилище.
+        val trustCertAlias = HexString.toHex(trustCert.serialNumber.toByteArray(), true)
+
+        // Вывод списка содержащищся в хранилище сертификатов.
+        println("Current count of trusted certificates: " + keyStore.size())
+
+        // Добавление сертификата, если его нет.
+        val needAdd = (keyStore.getCertificateAlias(trustCert) == null)
+        if (needAdd) {
+            println(
+                ("** Adding the trusted certificate " +
+                        trustCert.subjectDN + " with alias '" +
+                        trustCertAlias + "' into the trust store")
+            )
+            keyStore.setCertificateEntry(trustCertAlias, trustCert)
+            val updatedTrustStore = FileOutputStream(trustStoreFile)
+            keyStore.store(
+                updatedTrustStore,
+                BKSTrustStore.STORAGE_PASSWORD
+            )
+            println("The trusted certificate was added successfully.")
+        } // if
+        else {
+            println(
+                "** Trusted certificate has already " +
+                        "existed in the trust store."
+            )
+        } // else
+    }
+
 
     /** Поиск алиаса для сертификата с приватным ключем */
     @Throws(KeyStoreException::class, NoPrivateKeyFound::class)

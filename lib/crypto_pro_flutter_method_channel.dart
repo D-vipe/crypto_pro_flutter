@@ -19,6 +19,11 @@ class MethodChannelCryptoProFlutter extends CryptoProFlutterPlatform {
   }
 
   @override
+  Future<void> installCACerts() async {
+    await methodChannel.invokeMethod<void>('installCACerts');
+  }
+
+  @override
   Future<String> getLicenceStatus() async {
     final result = await methodChannel.invokeMethod<String>('getLicenceStatus');
     return result ?? 'error occured';
@@ -107,7 +112,6 @@ class MethodChannelCryptoProFlutter extends CryptoProFlutterPlatform {
   Future<bool> copyContainerFromDir({required List<String> files, required String dirName}) async {
     try {
       String response = await methodChannel.invokeMethod("copyContainerFromDir", {"files": files, "dirName": dirName});
-      print('PLATFORM CHANNEL RESULT OF COPY CONTAINER: ${response}');
       return response == 'true';
     } catch (exception) {
       throw Exception();

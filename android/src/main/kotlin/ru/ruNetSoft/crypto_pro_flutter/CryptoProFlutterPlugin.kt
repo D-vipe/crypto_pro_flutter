@@ -31,6 +31,11 @@ class CryptoProFlutterPlugin: FlutterPlugin, MethodCallHandler {
           "initCSP" -> {
             result.success(CryptoProModule.getInstance().initCSP(context!!))
           }
+
+          "installCACerts" -> {
+            result.success(CryptoProModule.getInstance().checkCAdESCACertsAndInstall(context!!).toString())
+          }
+
           "getLicenceStatus" -> {
             result.success(CryptoProModule.getInstance().getLicenceStatus())
           }

@@ -31,6 +31,10 @@ abstract class CryptoProFlutterPlatform extends PlatformInterface {
     throw UnimplementedError('initCSP() has not been implemented.');
   }
 
+  Future<void> installCACerts() {
+    throw UnimplementedError('installCACerts() has not been implemented.');
+  }
+
   Future<String> getLicenceStatus() {
     throw UnimplementedError('getLicenceStatus() has not been implemented.');
   }

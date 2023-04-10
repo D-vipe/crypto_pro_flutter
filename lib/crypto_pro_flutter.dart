@@ -10,6 +10,10 @@ class CryptoProFlutter {
     return CryptoProFlutterPlatform.instance.initCSP();
   }
 
+  Future<void> installCACerts() {
+    return CryptoProFlutterPlatform.instance.installCACerts();
+  }
+
   /// Проверка статуса лицензии
   Future<String> getLicenceStatus() {
     return CryptoProFlutterPlatform.instance.getLicenceStatus();
@@ -55,13 +59,17 @@ class CryptoProFlutter {
     bool isDetached = true,
     bool disableOnlineValidation = false,
   }) async {
-    return await CryptoProFlutterPlatform.instance.signFile(
-      file: file,
-      certificateAlias: certificateAlias,
-      password: password,
-      isDetached: true,
-      disableOnlineValidation: disableOnlineValidation,
-    );
+    try {
+      return await CryptoProFlutterPlatform.instance.signFile(
+        file: file,
+        certificateAlias: certificateAlias,
+        password: password,
+        isDetached: true,
+        disableOnlineValidation: disableOnlineValidation,
+      );
+    } catch (_) {
+      rethrow;
+    }
   }
 
   /// Подписать сообщение
