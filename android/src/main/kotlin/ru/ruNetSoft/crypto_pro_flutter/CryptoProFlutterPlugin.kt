@@ -108,6 +108,21 @@ class CryptoProFlutterPlugin: FlutterPlugin, MethodCallHandler {
               throw NullPointerException()
             }
           }
+          "verifySignature" -> {
+            val signature = call.argument<String>("signature")
+            val signedData = call.argument<String>("signedData")
+            val isDetached = call.argument<Boolean>("isDetached")
+
+            if (signature != null) {
+              result.success(CryptoProModule.getInstance().verifySignature(
+                signature,
+                signedData!!,
+                isDetached!!
+              ).toString())
+            } else {
+              throw NullPointerException()
+            }
+          }
         }
       } catch (e: Exception) {
         result.error("error", "Произошла ошибка при выполнении метода " + call.method, e);

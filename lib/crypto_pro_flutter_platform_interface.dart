@@ -55,11 +55,14 @@ abstract class CryptoProFlutterPlatform extends PlatformInterface {
 
   /// Получит список установленных сертификатов
   Future<List<Certificate>> getInstalledCertificates() {
-    throw UnimplementedError('getInstalledCertificates() has not been implemented.');
+    throw UnimplementedError(
+        'getInstalledCertificates() has not been implemented.');
   }
 
-  Future<bool> copyContainerFromDir({required List<String> files, required String dirName}) {
-    throw UnimplementedError('copyContainerFromDir() has not been implemented.');
+  Future<bool> copyContainerFromDir(
+      {required List<String> files, required String dirName}) {
+    throw UnimplementedError(
+        'copyContainerFromDir() has not been implemented.');
   }
 
   Future<License?> setNewLicense(String number) {
@@ -87,5 +90,13 @@ abstract class CryptoProFlutterPlatform extends PlatformInterface {
     bool disableOnlineValidation = false,
   }) {
     throw UnimplementedError('signMessage() has not been implemented.');
+  }
+
+  /// Проверить подпись
+  Future<Map<String, dynamic>> verifySignature({
+    required String signature,
+    String? signedData,
+  }) {
+    throw UnimplementedError('verifySignature() has not been implemented.');
   }
 }

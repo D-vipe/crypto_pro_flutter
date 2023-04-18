@@ -27,14 +27,17 @@ class CryptoProFlutter {
     return CryptoProFlutterPlatform.instance.setNewLicense(number);
   }
 
-  Future<bool> copyContainerFromDir({required List<String> files, required String dirName}) async {
-    return await CryptoProFlutterPlatform.instance.copyContainerFromDir(files: files, dirName: dirName);
+  Future<bool> copyContainerFromDir(
+      {required List<String> files, required String dirName}) async {
+    return await CryptoProFlutterPlatform.instance
+        .copyContainerFromDir(files: files, dirName: dirName);
   }
 
   /// Добавить новый сертификат в формате Pfx
   Future<Certificate> addPfxCertificate(File file, String password) async {
     try {
-      return await CryptoProFlutterPlatform.instance.addCertificate(file, password);
+      return await CryptoProFlutterPlatform.instance
+          .addCertificate(file, password);
     } catch (e) {
       rethrow;
     }
@@ -47,7 +50,8 @@ class CryptoProFlutter {
 
   /// Получит список установленных сертификатов
   Future<List<Certificate>> getInstalledCertificates() async {
-    final list = await CryptoProFlutterPlatform.instance.getInstalledCertificates();
+    final list =
+        await CryptoProFlutterPlatform.instance.getInstalledCertificates();
     return list;
   }
 
@@ -89,5 +93,23 @@ class CryptoProFlutter {
       signHash: signHash,
       disableOnlineValidation: disableOnlineValidation,
     );
+  }
+
+  Future<Map<String, dynamic>> verify({
+    required String signature,
+    String? signedData,
+  }) async {
+    Map<String, dynamic> result = {
+      'result': false,
+      'certificates': [],
+      'message': ''
+    };
+
+    result = await CryptoProFlutterPlatform.instance.verifySignature(
+      signature: signature,
+      signedData: signedData,
+    );
+
+    return result;
   }
 }
