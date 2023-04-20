@@ -115,8 +115,8 @@ class CryptoProFlutterPlugin: FlutterPlugin, MethodCallHandler {
 
             if (signature != null) {
               result.success(CryptoProModule.getInstance().verifySignature(
+                (if (signedData == null) "" else signedData),
                 signature,
-                signedData!!,
                 isDetached!!
               ).toString())
             } else {

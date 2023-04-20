@@ -3,9 +3,14 @@ package ru.ruNetSoft.crypto_pro_flutter
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.res.AssetManager
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.documentfile.provider.DocumentFile
+import org.bouncycastle.cert.X509CertificateHolder
 import org.bouncycastle.cms.CMSException
+import org.bouncycastle.cms.CMSProcessableByteArray
 import org.bouncycastle.cms.CMSSignedData
+import org.bouncycastle.util.Store
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -29,13 +34,12 @@ import ru.cprocsp.ACSP.tools.license.CSPLicenseConstants
 import ru.cprocsp.ACSP.tools.license.LicenseInterface
 import ru.ruNetSoft.crypto_pro_flutter.exceptions.NoPrivateKeyFound
 import java.io.*
-import java.security.KeyStore
-import java.security.KeyStoreException
-import java.security.PrivateKey
-import java.security.Security
+import java.security.*
 import java.security.cert.*
+import java.security.cert.Certificate
 import java.util.*
 import javax.security.cert.CertificateException
+
 
 /** Модуль для работы с Crypto Pro */
 class CryptoProModule {
@@ -172,7 +176,7 @@ class CryptoProModule {
             if (!dstContainer.exists() && !dstContainer.mkdirs()) {
                 false
             } else {
-                var containerFiles: ArrayList<DocumentFile> = ArrayList()
+                val containerFiles: ArrayList<DocumentFile> = ArrayList()
                 for (path in cFiles) {
                     containerFiles.add(DocumentFile.fromFile(File(path)))
                 }
@@ -419,8 +423,6 @@ class CryptoProModule {
                 }
             }
 
-
-
             val response = JSONObject()
             response.put("success", true)
             response.put("certificate", getJSONCertificate(mainCertAlias, certificate))
@@ -512,77 +514,174 @@ class CryptoProModule {
 
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     fun verifySignature(signedData: String?, signature: String, isDetached: Boolean): JSONObject {
         val responseJSON = JSONObject()
 
+        var certsList: List<X509Certificate> = ArrayList()
+
         try {
             println("VERIFYSIGNATURE(): FUNC STARTED")
-            val trustStore = KeyStore.getInstance(JCSP.HD_STORE_NAME, JCSP.PROVIDER_NAME)
-            val certFactory = CertificateFactory.getInstance("X.509", JCSP.PROVIDER_NAME)
-            // Получим ByteArray подписи
-            val signatureBytes = signature.toByteArray();
+            certsList = getCertificateChain(signature, signedData)
+            // Сертификаты (в данном случае корневой и пользователя,
+            // выданный УЦ).
+            val rootCertList: List<X509Certificate> = getRootCertsArray()
+            val trust: MutableSet<TrustAnchor> = HashSet(0)
 
-            println("VERIFYSIGNATURE(): GET CERT LIST")
-            // Получим список сертификатов подписи
-            val certsList: List<X509Certificate> = getCertificateChain(signatureBytes, trustStore)
+            println("VERIFYSIGNATURE(): ADD ALL ROOT CERTS TO TRUST")
+            for (root in rootCertList) {
+                trust.add(TrustAnchor(root, null))
+            }
 
-//            val cAdESSignature: CAdESSignature?
+            // Сертификат пользователя
+            val cert: ArrayList<Certificate> =
+                ArrayList(0)
 
-//            cAdESSignature = CAdESSignature(sign, null, cAdESType)
-//            cAdESSignature = CAdESSignature()
-//            cAdESSignature.verify(chain)
+            cert.add(certsList[0])
 
-            // Строим цепочку сертификатов
-            println("VERIFYSIGNATURE(): CERT CHAIN PROCESSING START")
-            val certPath = certFactory.generateCertPath(certsList);
-            println("VERIFYSIGNATURE(): CERT CHAIN PROCESSING END")
-            val validator = CertPathValidator.getInstance("PKIX", JCSP.PROVIDER_NAME)
-            val parameters = PKIXParameters(trustStore)
-            parameters.isRevocationEnabled = false
-            val result: CertPathValidatorResult = validator.validate(certPath, parameters)
-            println("VERIFYSIGNATURE(): VALIDATOR RESULT ${result.toString()}")
-            val pkixResult = result as PKIXCertPathValidatorResult
+            for (root in rootCertList) {
+                cert.add(root)
+            }
+
+            println("VERIFYSIGNATURE(): PKIXBuilderParameters START")
+            val cpp = PKIXBuilderParameters(trust, null)
+
+            // Всегда используем только провайдер Java CSP.
+            cpp.sigProvider = JCSP.PROVIDER_NAME
+
+            val par = CollectionCertStoreParameters(cert)
+
+            val store = CertStore.getInstance("Collection", par)
+            cpp.addCertStore(store)
+
+            val selector = X509CertSelector()
+            selector.certificate = certsList[0]
+            cpp.targetCertConstraints = selector
+
+            // Построение цепочки, используем напрямую
+            // {@link #PKIX_ALGORITHM}.
+            println("VERIFYSIGNATURE(): BUILD CERTIFICATE CHAIN")
+            cpp.isRevocationEnabled = false
+
+            val builder: CertPathBuilder = CertPathBuilder.getInstance(
+                "CPPKIX",
+                "RevCheck"
+            )
+
+            val res = builder.build(cpp) as PKIXCertPathBuilderResult
+            val cp = res.certPath
+
+            // Проверка цепочки, используем напрямую
+            // {@link #PKIX_ALGORITHM}.
+            println("VERIFYSIGNATURE(): VERIFY CERTIFICATE CHAIN")
+
+            val cpv: CertPathValidator = CertPathValidator.getInstance(
+                "CPPKIX",
+                "RevCheck"
+            )
+
+            cpp.isRevocationEnabled = true
+            val pkixResult: CertPathValidatorResult = cpv.validate(cp, cpp)
 
             println("VERIFYSIGNATURE(): PKIX RESULT ${pkixResult.toString()}")
 
             responseJSON.put("success", true)
-            responseJSON.put("result", pkixResult.toString())
-            responseJSON.put("certificates", JSONArray(certsList))
+            responseJSON.put("result", true)
 
-        } catch (e: Exception) {
+        }
+        catch (e: Exception) {
+            println("EXCEPTION : ${e.message}")
             responseJSON.put("success", false)
             responseJSON.put("message", e.message)
+            responseJSON.put("result", false)
+        } finally {
+            // Создаем переменную, в которой будем хранить и передавать список сертификатов в JSON формате
+            val certificatesJSON = ArrayList<JSONObject>()
+
+            if (certsList.isNotEmpty()) {
+                for((index, certificate) in certsList.withIndex()){
+                    val certificateJSON = getJSONCertificate("signature_cert_${index + 1}", certificate)
+                    certificatesJSON.add(certificateJSON)
+                }
+            }
+
+            responseJSON.put("certificates", JSONArray(certificatesJSON))
         }
+
 
         return responseJSON
     }
 
-    private fun getCertificateChain(signature: ByteArray, trustStore: KeyStore): List<X509Certificate> {
+    private fun getRootCertsArray(): List<X509Certificate> {
+        val keyStore = KeyStore.getInstance(JCSP.HD_STORE_NAME, JCSP.PROVIDER_NAME)
+        val certFactory = CertificateFactory.getInstance("X.509")
+        val rootCertList: ArrayList<X509Certificate> = ArrayList(0)
+
+        keyStore.load(null, null)
+        val aliases: Enumeration<String> = keyStore.aliases()
+        while (aliases.hasMoreElements()) {
+            val alias = aliases.nextElement()
+            if (keyStore.isCertificateEntry(alias)) {
+                val tmpCert: Certificate = keyStore.getCertificate(alias)
+                val cert =
+                    certFactory.generateCertificate(ByteArrayInputStream(tmpCert.encoded)) as X509Certificate
+                rootCertList.add(cert)
+            } // if
+        }
+
+        return rootCertList
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun getCertificateChain(signature: String, signedContent: String?): List<X509Certificate> {
+        val convertedCertList: ArrayList<X509Certificate> = ArrayList()
         try {
-            // Получаем массив сертификатов из подписанного сообщения
-            val certFactory = CertificateFactory.getInstance("X.509", JCSP.PROVIDER_NAME)
-            val signedData = CMSSignedData(signature)
-            val certs = signedData.certificates as Collection<*>
-//            val certList = ArrayList(certs)
-            val certList: List<X509Certificate> = certs.map { it as X509Certificate }
+            val certFactory = CertificateFactory.getInstance("X.509")
+            var scBytes: ByteArray? = null
+            val sigBytes: ByteArray = Base64.getDecoder().decode(signature.replace("\n", ""))
 
-            // После получения списка сертификатов нужно как-то проверить signedData
+            if (signedContent != null) {
+                scBytes = Base64.getDecoder().decode(signedContent.replace("\n", ""))
+            }
 
-            // Получаем список доверенных корневых сертификатов
-            trustStore.load(null, null)
-            val trustStoreAliases = trustStore.aliases()
+            // Получаем массив сертификатов из отсоединенной подписи
+            println("getCertificateChain(): GET SIGNED DATA FROM SIGNATURE START")
+            var signedData: CMSSignedData? = null
+
+            signedData = if (signedContent != null) {
+                CMSSignedData(CMSProcessableByteArray(scBytes!!), sigBytes)
+            } else {
+                CMSSignedData(sigBytes)
+            }
 
 
-            return certList
+            println("getCertificateChain(): GET SIGNED DATA FROM SIGNATURE END")
+
+            println("getCertificateChain(): GET CERTS START")
+            val certs: Store<X509CertificateHolder> = signedData.certificates
+            val listCerts: ArrayList<X509CertificateHolder> =
+                ArrayList(certs.getMatches(null))
+
+            if (listCerts.isNotEmpty()) {
+                println("getCertificateChain(): RECEIVED CERTS AS STORE PROCEED TO CERT LIST")
+                for (certificateHolder in listCerts) {
+                    val `in`: InputStream = ByteArrayInputStream(certificateHolder.encoded)
+                    val cert = certFactory.generateCertificate(`in`) as X509Certificate
+                    convertedCertList.add(cert)
+                }
+
+                println("getCertificateChain(): CONVERTED CERTS LIST LENTH: ${convertedCertList.count()}")
+            }
+
+            println("getCertificateChain(): GET CERTS END")
 
         } catch (e: CertificateException) {
-            e.printStackTrace()
+            println("getCertificateChain(): CertificateException ${e.printStackTrace()}")
+//            e.printStackTrace()
         } catch (e: CMSException) {
-            e.printStackTrace()
-        } catch (e: CertPathValidatorException) {
-            e.printStackTrace()
+            println("getCertificateChain(): CMSException ${e.printStackTrace()}")
         }
-        return Collections.emptyList()
+        return convertedCertList
     }
 
 

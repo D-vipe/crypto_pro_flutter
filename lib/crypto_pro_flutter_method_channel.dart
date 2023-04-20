@@ -199,16 +199,14 @@ class MethodChannelCryptoProFlutter extends CryptoProFlutterPlatform {
       );
       Map<String, dynamic> map = json.decode(response);
 
-      if (map["success"] == false) {
-        result['message'] = map["message"];
-      } else {
-        final certificatesMaps =
-        List<Map<String, dynamic>>.from(map['certificates'] as List);
-        final List<Certificate> certs = certificatesMaps.map((e) => Certificate.fromMap(e)).toList();
+      final certificatesMaps =
+          List<Map<String, dynamic>>.from(map['certificates'] as List);
+      final List<Certificate> certs =
+          certificatesMaps.map((e) => Certificate.fromMap(e)).toList();
 
-        result['result'] = true;
-        result['certificates'] = certs;
-      }
+      result['result'] = map["success"];
+      result['message'] = map["message"];
+      result['certificates'] = certs;
     } catch (exception) {
       rethrow;
     }
